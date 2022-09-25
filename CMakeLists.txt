@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8.2 FATAL_ERROR)
 
 project(surface_splatting
-    LANGUAGES CXX
+    LANGUAGES CUDA C CXX
 )
 
 set(extern_install_dir "${CMAKE_SOURCE_DIR}/.extern/install")

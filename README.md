@@ -13,6 +13,8 @@ _**Left**: Surface splatting of the Stanford Dragon model. **Right**: Closeup sh
 
 Before running CMake run either build-extern.cmd or build-extern.sh to download and build the necessary external dependencies in the .extern directory.
 
+The Dockerfile in this project is a little more general as it was copied from another project. Windows script does not contain git submodule init and update commands.
+
 ## Basic Principle
 
 Surface splatting<sup>1</sup> renders point-sampled surfaces using a combination of an object-space reconstruction filter and a screen-space pre-filter for each point sample. This effectively avoids aliasing artifacts and it guarantees a hole-free reconstruction of a point-sampled surface even for moderate sampling densities. The object-space reconstruction filter resembles an elliptical disk, also referred to as a *splat*, whose position, orientation, major axis, and semi-major axis are usually chosen to provide a good approximation to a given geometry. After a perspective projection of all splats to screen-space, rendering proceeds by applying a bandlimiting prefilter to avoid frequencies higher than the Nyquist frequency of the pixel sampling grid and summing up all contributions from the overlapping splats for each individual pixel with a subsequent normalization.

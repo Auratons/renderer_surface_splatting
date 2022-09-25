@@ -2,6 +2,9 @@
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null && pwd)"
 
+git submodule init
+git submodule update
+
 pushd $SCRIPT_ROOT
 mkdir -p .extern/build
 cd .extern/build
