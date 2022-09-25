@@ -15,24 +15,25 @@
 // You should have received a copy of the GNU General Public License
 // along with Surface Splatting. If not, see <http://www.gnu.org/licenses/>.
 
+#include <array>
+#include <exception>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <thread>
+#include <vector>
+
+#include <CLI/App.hpp>
+#include <CLI/Formatter.hpp>  // Even thought seems unused it's needed
+#include <CLI/Config.hpp>  // Even thought seems unused it's needed
+#include <Eigen/Core>
+#include <GL/glew.h>
 #include <GLviz/glviz.hpp>
 #include <GLviz/utility.hpp>
 
-#include "splat_renderer.hpp"
-
 #include "config.hpp"
-
-#include <Eigen/Core>
-
-#include <iostream>
-#include <memory>
-#include <fstream>
-#include <sstream>
-#include <vector>
-#include <array>
-#include <exception>
-
-#include <thread>
+#include "egl.hpp"
+#include "splat_renderer.hpp"
 
 using namespace Eigen;
 
@@ -643,6 +644,30 @@ keyboard(SDL_Keycode key)
 int
 main(int argc, char* argv[])
 {
+  std::string pcd_path, matrix_path, output_path;
+  bool headless = false;
+  CLI::App args{"Surface Splatting Renderer"};
+  auto file = args.add_option("-f,--file", pcd_path, "Path to pointcloud to render");
+  args.add_option("-m,--matrices", matrix_path, "Path to view matrices json for which to render pointcloud in case of headless rendering.");
+  args.add_option("-o,--output_path", output_path, "Path where to store renders in case of headless rendering.");
+  args.add_flag("-d,--headless", headless, "Run headlessly without a window");
+  CLI11_PARSE(args, argc, argv);
+
+  if (headless) {
+    EGLDisplay display;
+    auto successful_run = true;
+    try {
+      display = init_egl();
+      glewInit();
+    }
+    catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      successful_run = false;
+    }
+    eglTerminate(display);
+    return (successful_run) ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
+  else {
     GLviz::GLviz();
 
     g_camera.translate(Eigen::Vector3f(0.0f, 0.0f, -2.0f));
@@ -657,4 +682,5 @@ main(int argc, char* argv[])
     GLviz::keyboard_callback(keyboard);
 
     return GLviz::exec(g_camera);
+  }
 }
