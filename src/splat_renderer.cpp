@@ -434,6 +434,12 @@ SplatRenderer::reshape(int width, int height)
     m_fbo.reshape(width, height);
 }
 
+Framebuffer&
+SplatRenderer::framebuffer()
+{
+  return m_fbo;
+}
+
 void
 SplatRenderer::setup_uniforms(glProgram& program)
 {

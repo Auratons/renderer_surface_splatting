@@ -57,6 +57,8 @@ add_executable(surface_splatting
     splat_renderer.hpp
     stb_image_write.cpp
     egl.cpp
+    ply_loader.hpp
+    utils.cpp
 )
 
 set_source_files_properties(stb_image_write.cpp

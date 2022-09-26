@@ -23,19 +23,28 @@
 #include <thread>
 #include <vector>
 
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
+#include <boost/serialization/vector.hpp>
 #include <CLI/App.hpp>
 #include <CLI/Formatter.hpp>  // Even thought seems unused it's needed
 #include <CLI/Config.hpp>  // Even thought seems unused it's needed
 #include <Eigen/Core>
 #include <GL/glew.h>
+#include <glm/glm.hpp>
 #include <GLviz/glviz.hpp>
 #include <GLviz/utility.hpp>
+#include <nlohmann/json.hpp>
 
 #include "config.hpp"
 #include "egl.hpp"
+#include "ply_loader.hpp"
 #include "splat_renderer.hpp"
+#include "utils.hpp"
 
 using namespace Eigen;
+using json = nlohmann::json;
+using namespace std::chrono;
 
 namespace
 {
@@ -54,6 +63,13 @@ void load_triangle_mesh(std::string const& filename, std::vector<
 void mesh_to_surfel(std::vector<Eigen::Vector3f> const& vertices,
     std::vector<std::array<unsigned int, 3>> const& faces,
     std::vector<Surfel>& surfels);
+
+void mesh_to_surfel(
+    const std::string &name,
+    std::vector<Eigen::Vector3f> const& vertices,
+    std::vector<Eigen::Vector3f> const& normals,
+    std::vector<Surfel>& surfels,
+    std::vector<std::array<unsigned int, 3>> const& colors = std::vector<std::array<unsigned int, 3>>());
 
 void
 load_plane(unsigned int n)
@@ -294,10 +310,10 @@ load_model()
 }
 
 void
-load_triangle_mesh(std::string const& filename, std::vector<
-    Eigen::Vector3f>& vertices, std::vector<std::array<
-    unsigned int, 3>>& faces)
-{
+load_triangle_mesh(
+    std::string const& filename,
+    std::vector<Eigen::Vector3f>& vertices,
+    std::vector<std::array<unsigned int, 3>>& faces) {
     std::cout << "\nRead " << filename << "." << std::endl;
     std::ifstream input(filename);
 
@@ -318,6 +334,22 @@ load_triangle_mesh(std::string const& filename, std::vector<
 
     std::cout << "  #vertices " << vertices.size() << std::endl;
     std::cout << "  #faces    " << faces.size() << std::endl;
+}
+
+void load_ply_to_surfels(const std::string &name) {
+  std::vector<Eigen::Vector3f>              vertices, normals;
+  std::vector<std::array<unsigned int, 3>>  faces, colors;
+
+  load_ply<Eigen::Vector3f>(name, vertices, normals, faces, colors);
+  if (normals.size() != vertices.size() && vertices.size() != colors.size())
+    throw std::runtime_error("No normals!");
+
+  if (normals.empty()) {
+    GLviz::set_vertex_normals_from_triangle_mesh(
+            vertices, faces, normals);
+  }
+
+  mesh_to_surfel(name, vertices, normals, g_surfels, colors);
 }
 
 void
@@ -476,6 +508,38 @@ mesh_to_surfel(std::vector<Eigen::Vector3f> const& vertices,
 }
 
 void
+mesh_to_surfel(
+    const std::string& name,
+    std::vector<Eigen::Vector3f> const& vertices,
+    std::vector<Eigen::Vector3f> const& normals,
+    std::vector<Surfel>& surfels,
+    std::vector<std::array<unsigned int, 3>> const& colors) {
+  surfels.resize(vertices.size());
+  std::vector<float> radii;
+  std::cout << "Reading radii from: " << std::filesystem::absolute(std::filesystem::path(name + ".radii")) << std::endl;
+  {
+    std::ifstream ifs(name + ".radii");
+    boost::archive::text_iarchive ia(ifs);
+    ia & radii;
+    ifs.close();
+  }
+
+  for (size_t i = 0; i < surfels.size(); ++i) {
+    Vector3f t1, t2;
+    const auto& v_n = normals[i].normalized();
+    t1 = Vector3f(0,0,1).cross(v_n).normalized();
+    t2 = v_n.cross(t1).normalized();
+
+    auto& surfel = surfels[i];
+    surfel.c = vertices[i];
+    surfel.u = t1 * radii[i];
+    surfel.v = t2 * radii[i];
+    surfel.p = Vector3f::Zero();
+    surfel.rgba = colors[i][0] | (colors[i][1] << 8) | (colors[i][2] << 16);
+  }
+}
+
+void
 display()
 {
     viz->render_frame(g_surfels);
@@ -492,7 +556,7 @@ reshape(int width, int height)
 }
 
 void
-close()
+close_()
 {
     viz = nullptr;
 }
@@ -659,6 +723,84 @@ main(int argc, char* argv[])
     try {
       display = init_egl();
       glewInit();
+
+      load_ply_to_surfels(pcd_path);
+      std::cout << "g_surfels size: " << g_surfels.size() << std::endl;
+      auto output = std::filesystem::path(output_path);
+
+      if (!matrix_path.empty()) {
+        std::ifstream matrices{matrix_path};
+        if (matrices.good()) {
+          std::cout << "Matrices loaded." << std::endl;
+          json j;
+          matrices >> j;
+          auto process = [&](const std::string &target_render_path, const json &params) {
+            auto path = std::filesystem::path(target_render_path);
+            auto last_but_one_segment = *(--(--path.end()));
+            auto last_segment = *(--path.end());
+            auto output_file_path = output / last_but_one_segment / last_segment;
+            auto lock_file_path = output / last_but_one_segment / ("." + last_segment.string() + ".lock");
+            if (!exists(output)) std::filesystem::create_directory(output);
+            if (!exists(output / last_but_one_segment)) std::filesystem::create_directory(output / last_but_one_segment);
+            if (std::filesystem::exists(output_file_path)) {
+              std::cout << canonical(absolute(output_file_path)) << ": " << "ALREADY EXISTS" << std::endl;
+              return;
+            }
+            { std::ofstream{lock_file_path}; }
+            boost::interprocess::file_lock lock(lock_file_path.c_str());
+            if (!lock.try_lock()) {
+              std::cout << absolute(output_file_path) << ": " << "ALREADY LOCKED" << std::endl;
+              return;
+            }
+            std::cout << absolute(output_file_path) << ": " << "LOCKING" << std::endl;
+            auto camera_pose = params.at("extrinsic_matrix").get<glm::mat4>();
+            auto camera_matrix = params.at("intrinsic_matrix").get<glm::mat4>();
+            auto image_width = 2.0f * camera_matrix[2][0];
+            auto image_height = 2.0f * camera_matrix[2][1];
+            auto focal_length_pixels = camera_matrix[0][0];
+            assert(focal_length_pixels == camera_matrix[1][1]);
+            auto fov = 180.0f * 2.0f * atanf(image_height / (2.0f * focal_length_pixels)) / 3.14159265358979323846f;
+
+            Matrix3f cam_pose_eigen;
+            cam_pose_eigen <<
+              float(camera_pose[0][0]), float(camera_pose[1][0]), float(camera_pose[2][0]),
+              float(camera_pose[0][1]), float(camera_pose[1][1]), float(camera_pose[2][1]),
+              float(camera_pose[0][2]), float(camera_pose[1][2]), float(camera_pose[2][2]);
+
+            glViewport(0, 0, (GLsizei)image_width, (GLsizei)image_height);
+            auto renderer = SplatRenderer(g_camera);
+            renderer.set_color_material(false);
+            renderer.set_multisample(false);
+            renderer.set_pointsize_method(1);  // Amended BHZK05
+            renderer.set_backface_culling(true);
+            renderer.set_soft_zbuffer(false);
+
+            g_camera.set_orientation(cam_pose_eigen);
+            g_camera.set_position(Vector3f(camera_pose[3][0], camera_pose[3][1], camera_pose[3][2]));
+            g_camera.set_perspective(fov, image_width / image_height, 0.1f, 100.0f);
+
+            auto start = high_resolution_clock::now();
+            renderer.render_frame(g_surfels);
+            auto end = high_resolution_clock::now();
+
+            save_png(renderer.framebuffer().color_texture(), output_file_path.c_str());
+
+            std::cout << canonical(absolute(output_file_path)) << ": " << (float)duration_cast<milliseconds>(end - start).count() / 1000.0f << " s" << std::endl;
+
+            lock.unlock();
+            remove(lock_file_path);
+          };
+          for (auto &[target_render_path, params]: j.at("train").items()) {
+            process(target_render_path, params);
+          }
+          for (auto &[target_render_path, params]: j.at("val").items()) {
+            process(target_render_path, params);
+          }
+        }
+        else {
+          std::cout << "Error opening matrix file" << std::endl;
+        }
+      }
     }
     catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
@@ -677,7 +819,7 @@ main(int argc, char* argv[])
 
     GLviz::display_callback(display);
     GLviz::reshape_callback(reshape);
-    GLviz::close_callback(close);
+    GLviz::close_callback(close_);
     GLviz::gui_callback(gui);
     GLviz::keyboard_callback(keyboard);
 
