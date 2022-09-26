@@ -111,18 +111,18 @@ void main()
             res += vec4(lighting(normal, v_eye.xyz,
                 pixel.rgb / pixel.a, material_shininess), 1.0);
             #else
-                res += vec4(pixel.rgb / pixel.a, 1.0f);
+                res += pixel;
             #endif
         }
         else
         {
-            res += vec4(1.0);
+            res += vec4(0,0,0,1.0);
         }
     }
 
     #if MULTISAMPLING
         frag_color = sqrt(res / 4.0);
     #else
-        frag_color = sqrt(res);
+        frag_color = res;
     #endif
 }

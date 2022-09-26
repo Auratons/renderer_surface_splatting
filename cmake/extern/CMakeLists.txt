@@ -98,8 +98,8 @@ DownloadProject(eigen
 )
 
 DownloadProject(glviz
-    URL     "https://github.com/sebastianlipponer/glviz/archive/1.0.zip"
-    URL_MD5 "d66d00661861405d3ae1adb3d104393c"
+    URL     "https://github.com/Auratons/glviz/archive/refs/tags/v1.0.1.zip"
+    URL_MD5 "2b35c017b80a353b568dad7468645fc3"
 )
 
 # Build.

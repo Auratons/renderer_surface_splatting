@@ -119,6 +119,8 @@ public:
 
     void reshape(int width, int height);
 
+    Framebuffer& framebuffer();
+
 private:
     void setup_program_objects();
     void setup_filter_kernel();
