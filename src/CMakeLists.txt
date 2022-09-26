@@ -106,3 +106,38 @@ target_link_libraries(surface_splatting
 )
 
 file(COPY ../resources DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Surface splatting executable.
+add_executable(serializer
+    serializer.cu
+    ply_loader.hpp
+)
+
+set_property(TARGET serializer
+    PROPERTY
+        CUDA_SEPARABLE_COMPILATION ON
+)
+
+target_include_directories(serializer
+    PRIVATE
+        ${Boost_INCLUDE_DIRS}
+)
+
+target_link_libraries(serializer
+    CLI11::CLI11
+    HAPPLY
+    dl
+    CUDA::toolkit
+    Boost::boost  # Header-only target for interprocess.
+    ${Boost_LIBRARIES}
+    Eigen3::Eigen
+    glm::glm
+    #  pthread
+)
+
+target_compile_options(serializer
+    PRIVATE
+        $<$<AND:$<COMPILE_LANG_AND_ID:CXX,CUDA,GNU>,$<CONFIG:DEBUG>>:-Wall -Wextra -Wextra -Wunreachable-code -Wunused -Wunused-function -Wunused-label -Wunused-parameter -Wunused-value -Wunused-variable>
+        $<$<AND:$<COMPILE_LANG_AND_ID:CXX,CUDA,GNU>,$<CONFIG:RELEASE>>:-O2>
+        $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda --relocatable-device-code=true --compile>
+)
