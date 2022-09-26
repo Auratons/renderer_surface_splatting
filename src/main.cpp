@@ -774,6 +774,7 @@ main(int argc, char* argv[])
             renderer.set_pointsize_method(1);  // Amended BHZK05
             renderer.set_backface_culling(true);
             renderer.set_soft_zbuffer(false);
+            renderer.set_radius_scale(1.2);
 
             g_camera.set_orientation(cam_pose_eigen);
             g_camera.set_position(Vector3f(camera_pose[3][0], camera_pose[3][1], camera_pose[3][2]));

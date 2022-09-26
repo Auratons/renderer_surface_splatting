@@ -240,13 +240,14 @@ pointsprite(in vec3 c, in vec3 u, in vec3 v,
 
 #elif POINTSIZE_METHOD == 1
 
-    // BHZK05.
+    // Amended BHZK05.
     p_scr = projection_matrix * vec4(c, 1.0);
 
-    float p11 = projection_matrix[1][1];
+    float p = max(projection_matrix[0][0], projection_matrix[1][1]);
     float r = max(length(u), length(v));
+    float rr = p * r;
 
-    w = vec2(0.0, r * p11 / abs(c.z));
+    w = vec2(rr, rr);
 
 #elif POINTSIZE_METHOD == 2
 
@@ -340,21 +341,21 @@ void main()
     pointsprite(c_eye.xyz, u_eye, v_eye, p_scr, w);
 
 #if !VISIBILITY_PASS
-    #if SMOOTH
+//    #if SMOOTH
         #if COLOR_MATERIAL
             Out.color = material_color;
         #else
             Out.color = vec3(rgba);
         #endif
-    #else
-        #if COLOR_MATERIAL
-            Out.color = lighting(n_eye, vec3(c_eye), material_color,
-                                 material_shininess);
-        #else
-            Out.color = lighting(n_eye, vec3(c_eye), vec3(rgba),
-                                 material_shininess);
-        #endif
-    #endif
+//    #else
+//        #if COLOR_MATERIAL
+//            Out.color = lighting(n_eye, vec3(c_eye), material_color,
+//                                 material_shininess);
+//        #else
+//            Out.color = lighting(n_eye, vec3(c_eye), vec3(rgba),
+//                                 material_shininess);
+//        #endif
+//    #endif
 #endif
 
 #if BACKFACE_CULLING

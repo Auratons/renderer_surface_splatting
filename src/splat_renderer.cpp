@@ -545,7 +545,7 @@ SplatRenderer::begin_frame()
 void
 SplatRenderer::end_frame()
 {
-    m_fbo.unbind();
+//    m_fbo.unbind();
 
     if (m_multisample)
     {
