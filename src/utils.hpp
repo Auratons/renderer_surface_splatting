@@ -6,6 +6,7 @@
 #include <GL/glew.h>
 
 void save_png(GLuint texture_id, const std::string &filename);
+void save_depth(GLuint texture_id, const std::string &filename, float prj_mat22, float prj_mat23);
 
 namespace glm {
     std::ostream &operator<<(std::ostream &out, const glm::mat4 &m);

@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <regex>
 #include <thread>
 #include <vector>
 
@@ -743,6 +744,7 @@ main(int argc, char* argv[])
             auto last_but_one_segment = *(--(--path.end()));
             auto last_segment = *(--path.end());
             auto output_file_path = output / last_but_one_segment / last_segment;
+            auto output_depth_path = output / last_but_one_segment / std::regex_replace(last_segment.string(), std::regex("_color"), "_depth");
             auto lock_file_path = output / last_but_one_segment / ("." + last_segment.string() + ".lock");
             if (!exists(output)) std::filesystem::create_directory(output);
             if (!exists(output / last_but_one_segment)) std::filesystem::create_directory(output / last_but_one_segment);
@@ -781,6 +783,7 @@ main(int argc, char* argv[])
             renderer.set_backface_culling(true);
             renderer.set_soft_zbuffer(false);
             renderer.set_radius_scale(1.2);
+            renderer.framebuffer().enable_depth_texture();
 
             g_camera.set_orientation(cam_pose_eigen);
             g_camera.set_position(Vector3f(camera_pose[3][0], camera_pose[3][1], camera_pose[3][2]));
@@ -791,6 +794,8 @@ main(int argc, char* argv[])
             auto end = high_resolution_clock::now();
 
             save_png(renderer.framebuffer().color_texture(), output_file_path.c_str());
+            auto proj = g_camera.get_projection_matrix();
+            save_depth(renderer.framebuffer().depth_texture(), output_depth_path.c_str(), proj(2, 2), proj(2, 3));
 
             std::cout << canonical(absolute(output_file_path)) << ": " << (float)duration_cast<milliseconds>(end - start).count() / 1000.0f << " s" << std::endl;
 

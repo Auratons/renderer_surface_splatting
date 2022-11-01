@@ -98,21 +98,21 @@ void main()
 
         if (pixel.a > 0.0)
         {
-            #if SMOOTH
-            vec4 p_ndc = vec4(
-                2.0 * (gl_FragCoord.xy - viewport.xy) / (viewport.zw) - 1.0,
-                (2.0 * depth - gl_DepthRange.near - gl_DepthRange.far)
-                / gl_DepthRange.diff, 1.0
-                );
-
-            vec4 v_eye = projection_matrix_inv * p_ndc;
-            v_eye = v_eye / v_eye.w;
-
-            res += vec4(lighting(normal, v_eye.xyz,
-                pixel.rgb / pixel.a, material_shininess), 1.0);
-            #else
+//            #if SMOOTH
+//            vec4 p_ndc = vec4(
+//                2.0 * (gl_FragCoord.xy - viewport.xy) / (viewport.zw) - 1.0,
+//                (2.0 * depth - gl_DepthRange.near - gl_DepthRange.far)
+//                / gl_DepthRange.diff, 1.0
+//                );
+//
+//            vec4 v_eye = projection_matrix_inv * p_ndc;
+//            v_eye = v_eye / v_eye.w;
+//
+//            res += vec4(lighting(normal, v_eye.xyz,
+//                pixel.rgb / pixel.a, material_shininess), 1.0);
+//            #else
                 res += pixel;
-            #endif
+//            #endif
         }
         else
         {

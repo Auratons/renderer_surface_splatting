@@ -19,6 +19,7 @@ find_package(CLI11 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL EGL GLX)
 find_package(glfw3 3.3 REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED)
+find_package(OpenCV REQUIRED)
 
 file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}/resources/" GLVIZ_RESOURCES_DIR)
 configure_file(config.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/config.hpp")
@@ -59,6 +60,7 @@ add_executable(surface_splatting
     egl.cpp
     ply_loader.hpp
     utils.cpp
+    npy.hpp
 )
 
 set_source_files_properties(stb_image_write.cpp
@@ -87,6 +89,7 @@ target_include_directories(surface_splatting
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         ${Boost_INCLUDE_DIRS}
+        ${OpenCV_INCLUDE_DIRS}
 )
 
 target_link_libraries(surface_splatting
@@ -103,6 +106,7 @@ target_link_libraries(surface_splatting
             glfw
             nlohmann_json::nlohmann_json
             glm::glm
+            ${OpenCV_LIBS}
 )
 
 file(COPY ../resources DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
