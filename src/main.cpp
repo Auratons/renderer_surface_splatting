@@ -516,9 +516,9 @@ mesh_to_surfel(
     std::vector<std::array<unsigned int, 3>> const& colors) {
   surfels.resize(vertices.size());
   std::vector<float> radii;
-  std::cout << "Reading radii from: " << std::filesystem::absolute(std::filesystem::path(name + ".radii")) << std::endl;
+  std::cout << "Reading radii from: " << std::filesystem::absolute(std::filesystem::path(name + ".kdtree.radii")) << std::endl;
   {
-    std::ifstream ifs(name + ".radii");
+    std::ifstream ifs(name + ".kdtree.radii");
     boost::archive::text_iarchive ia(ifs);
     ia & radii;
     ifs.close();
@@ -709,12 +709,13 @@ int
 main(int argc, char* argv[])
 {
   std::string pcd_path, matrix_path, output_path;
-  bool headless = false;
+  bool headless = false, ignore_existing = false;
   CLI::App args{"Surface Splatting Renderer"};
   auto file = args.add_option("-f,--file", pcd_path, "Path to pointcloud to render");
   args.add_option("-m,--matrices", matrix_path, "Path to view matrices json for which to render pointcloud in case of headless rendering.");
   args.add_option("-o,--output_path", output_path, "Path where to store renders in case of headless rendering.");
   args.add_flag("-d,--headless", headless, "Run headlessly without a window");
+  args.add_flag("-i,--ignore_existing", ignore_existing, "Ignore existing renders and forcefully rewrite them.");
   CLI11_PARSE(args, argc, argv);
 
   if (headless) {
@@ -734,7 +735,10 @@ main(int argc, char* argv[])
           std::cout << "Matrices loaded." << std::endl;
           json j;
           matrices >> j;
-          auto process = [&](const std::string &target_render_path, const json &params) {
+          auto process = [&](
+                  const std::string &target_render_path,
+                  const json &params,
+                  bool ignore_existing) {
             auto path = std::filesystem::path(target_render_path);
             auto last_but_one_segment = *(--(--path.end()));
             auto last_segment = *(--path.end());
@@ -742,9 +746,11 @@ main(int argc, char* argv[])
             auto lock_file_path = output / last_but_one_segment / ("." + last_segment.string() + ".lock");
             if (!exists(output)) std::filesystem::create_directory(output);
             if (!exists(output / last_but_one_segment)) std::filesystem::create_directory(output / last_but_one_segment);
-            if (std::filesystem::exists(output_file_path)) {
-              std::cout << canonical(absolute(output_file_path)) << ": " << "ALREADY EXISTS" << std::endl;
-              return;
+            if (!ignore_existing) {
+              if (std::filesystem::exists(output_file_path)) {
+                std::cout << canonical(absolute(output_file_path)) << ": " << "ALREADY EXISTS" << std::endl;
+                return;
+              }
             }
             { std::ofstream{lock_file_path}; }
             boost::interprocess::file_lock lock(lock_file_path.c_str());
@@ -792,15 +798,18 @@ main(int argc, char* argv[])
             remove(lock_file_path);
           };
           for (auto &[target_render_path, params]: j.at("train").items()) {
-            process(target_render_path, params);
+            process(target_render_path, params, ignore_existing);
           }
           for (auto &[target_render_path, params]: j.at("val").items()) {
-            process(target_render_path, params);
+            process(target_render_path, params, ignore_existing);
           }
         }
         else {
           std::cout << "Error opening matrix file" << std::endl;
         }
+      }
+      else {
+        std::cout << "The matrix file '" << matrix_path << "' was not found." << std::endl;
       }
     }
     catch (const std::exception &e) {
