@@ -70,6 +70,7 @@ void mesh_to_surfel(
     std::vector<Eigen::Vector3f> const& vertices,
     std::vector<Eigen::Vector3f> const& normals,
     std::vector<Surfel>& surfels,
+    float max_radius,
     std::vector<std::array<unsigned int, 3>> const& colors = std::vector<std::array<unsigned int, 3>>());
 
 void
@@ -337,7 +338,7 @@ load_triangle_mesh(
     std::cout << "  #faces    " << faces.size() << std::endl;
 }
 
-void load_ply_to_surfels(const std::string &name) {
+void load_ply_to_surfels(const std::string &name, float max_radius) {
   std::vector<Eigen::Vector3f>              vertices, normals;
   std::vector<std::array<unsigned int, 3>>  faces, colors;
 
@@ -350,7 +351,7 @@ void load_ply_to_surfels(const std::string &name) {
             vertices, faces, normals);
   }
 
-  mesh_to_surfel(name, vertices, normals, g_surfels, colors);
+  mesh_to_surfel(name, vertices, normals, g_surfels, max_radius, colors);
 }
 
 void
@@ -514,6 +515,7 @@ mesh_to_surfel(
     std::vector<Eigen::Vector3f> const& vertices,
     std::vector<Eigen::Vector3f> const& normals,
     std::vector<Surfel>& surfels,
+    float max_radius,
     std::vector<std::array<unsigned int, 3>> const& colors) {
   surfels.resize(vertices.size());
   std::vector<float> radii;
@@ -523,6 +525,13 @@ mesh_to_surfel(
     boost::archive::text_iarchive ia(ifs);
     ia & radii;
     ifs.close();
+  }
+
+  if (max_radius > 0.0f) {
+    transform(radii.begin(), radii.end(), radii.begin(), [max_radius](float &radius) {
+        return (radius > max_radius) ? max_radius : radius;
+      }
+    );
   }
 
   for (size_t i = 0; i < surfels.size(); ++i) {
@@ -711,10 +720,12 @@ main(int argc, char* argv[])
 {
   std::string pcd_path, matrix_path, output_path;
   bool headless = false, ignore_existing = false;
+  float max_radius{0.1f};
   CLI::App args{"Surface Splatting Renderer"};
   auto file = args.add_option("-f,--file", pcd_path, "Path to pointcloud to render");
   args.add_option("-m,--matrices", matrix_path, "Path to view matrices json for which to render pointcloud in case of headless rendering.");
   args.add_option("-o,--output_path", output_path, "Path where to store renders in case of headless rendering.");
+  args.add_option("-r,--max_radius", max_radius, "Filter possible outliers in radii file by settings max radius.");
   args.add_flag("-d,--headless", headless, "Run headlessly without a window");
   args.add_flag("-i,--ignore_existing", ignore_existing, "Ignore existing renders and forcefully rewrite them.");
   CLI11_PARSE(args, argc, argv);
@@ -726,7 +737,7 @@ main(int argc, char* argv[])
       display = init_egl();
       glewInit();
 
-      load_ply_to_surfels(pcd_path);
+      load_ply_to_surfels(pcd_path, max_radius);
       std::cout << "g_surfels size: " << g_surfels.size() << std::endl;
       auto output = std::filesystem::path(output_path);
 
