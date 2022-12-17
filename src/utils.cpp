@@ -44,17 +44,19 @@ void save_depth(GLuint texture_id, const std::string &filename, float prj_mat22,
   }
   // Transform depths from the depth buffer from -1,1 to real depths with projection matrix
   auto && f = [prj_mat22, prj_mat23](float &d){
-    return 1.0f / (((d * 2.0f - 1.0f) + prj_mat22) / prj_mat23);
+    if (abs(d - 1.0f) < 0.00001f)  // To reflect depth of empty spaces handling in the original article.
+      return 0.0f;
+    return (255.0f / 100.0f) * 1.0f / (((d * 2.0f - 1.0f) + prj_mat22) / prj_mat23);
   };
   std::transform(raw_data.begin(), raw_data.end(), raw_data.begin(), f);
-  auto png = std::vector<uint16_t>(viewport[2] * viewport[3]);
+  auto png = std::vector<uint8_t>(viewport[2] * viewport[3]);
   auto begin = (const float*)raw_data.data();
   auto end = (const float*)(raw_data.data() + raw_data.size());
-  std::transform(begin, end, png.begin(), [](const float &val){ return (uint16_t)val; });
+  std::transform(begin, end, png.begin(), [](const float &val){ return (uint8_t)std::clamp(val, 0.0f, 255.0f); });
   const std::vector<long unsigned> shape{(long unsigned)viewport[3], (long unsigned)viewport[2]};
   const bool fortran_order{false};
   npy::SaveArrayAsNumpy(filename + ".npy", fortran_order, shape.size(), shape.data(), raw_data);
-  auto img = cv::Mat(viewport[3], viewport[2], CV_16UC1, png.data());
+  auto img = cv::Mat(viewport[3], viewport[2], CV_8UC1, png.data());
   cv::imwrite(filename, img);
 }
 
