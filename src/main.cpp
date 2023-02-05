@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <regex>
 #include <thread>
 #include <vector>
@@ -46,6 +47,7 @@
 using namespace Eigen;
 using json = nlohmann::json;
 using namespace std::chrono;
+using namespace std;
 
 namespace
 {
@@ -338,7 +340,7 @@ load_triangle_mesh(
     std::cout << "  #faces    " << faces.size() << std::endl;
 }
 
-void load_ply_to_surfels(const std::string &name, float max_radius) {
+void load_ply_to_surfels(const std::string &name, float max_radius, int max_points) {
   std::vector<Eigen::Vector3f>              vertices, normals;
   std::vector<std::array<unsigned int, 3>>  faces, colors;
 
@@ -351,7 +353,55 @@ void load_ply_to_surfels(const std::string &name, float max_radius) {
             vertices, faces, normals);
   }
 
-  mesh_to_surfel(name, vertices, normals, g_surfels, max_radius, colors);
+  std::vector<float> radii;
+  auto radii_path = name + ".kdtree.radii";
+  std::cout << "Reading radii from: " << std::filesystem::absolute(std::filesystem::path(radii_path)) << std::endl;
+  {
+    std::ifstream ifs(radii_path);
+    boost::archive::text_iarchive ia(ifs);
+    ia & radii;
+    ifs.close();
+  }
+
+  if (max_radius > 0.0f) {
+    transform(radii.begin(), radii.end(), radii.begin(), [max_radius](float &radius) {
+        return (radius > max_radius) ? max_radius : radius;
+      }
+    );
+  }
+
+  std::vector<int> max_points_indices(vertices.size());
+  if (max_points > 0 && max_points < vertices.size()) {
+    std::vector<Eigen::Vector3f> v_h(max_points);
+    std::vector<std::array<unsigned int, 3>> c_h(max_points);
+    std::vector<float> r_h(max_points);
+    std::iota (std::begin(max_points_indices), std::end(max_points_indices), 0);
+    std::mt19937 g(42); // NOLINT(cert-msc51-cpp)
+    std::shuffle(max_points_indices.begin(), max_points_indices.end(), g);
+    for (int ax = 0; ax < max_points; ++ax) {
+      v_h[ax] = vertices[max_points_indices[ax]];
+      c_h[ax] = colors[max_points_indices[ax]];
+      r_h[ax] = radii[max_points_indices[ax]];
+    }
+    vertices = v_h;
+    colors = c_h;
+    radii = r_h;
+  }
+
+  g_surfels.resize(vertices.size());
+  for (size_t i = 0; i < g_surfels.size(); ++i) {
+    Vector3f t1, t2;
+    const auto& v_n = normals[i].normalized();
+    t1 = Vector3f(0, 0, 1).cross(v_n).normalized();
+    t2 = v_n.cross(t1).normalized();
+
+    auto& surfel = g_surfels[i];
+    surfel.c = vertices[i];
+    surfel.u = t1 * radii[i];
+    surfel.v = t2 * radii[i];
+    surfel.p = Vector3f::Zero();
+    surfel.rgba = colors[i][0] | (colors[i][1] << 8) | (colors[i][2] << 16);
+  }
 }
 
 void
@@ -715,16 +765,16 @@ keyboard(SDL_Keycode key)
 
 }
 
-int
-main(int argc, char* argv[])
-{
-  std::string pcd_path, matrix_path, output_path;
+int main(int argc, char** argv) {
+  string pcd_path, matrix_path, output_path;
   bool headless = false, ignore_existing = false;
+  int mp = -1;
   float max_radius{0.1f};
   CLI::App args{"Surface Splatting Renderer"};
   auto file = args.add_option("-f,--file", pcd_path, "Path to pointcloud to render");
   args.add_option("-m,--matrices", matrix_path, "Path to view matrices json for which to render pointcloud in case of headless rendering.");
   args.add_option("-o,--output_path", output_path, "Path where to store renders in case of headless rendering.");
+  args.add_option("-s,--max_points", mp, "Take exact number of points.");
   args.add_option("-r,--max_radius", max_radius, "Filter possible outliers in radii file by settings max radius.");
   args.add_flag("-d,--headless", headless, "Run headlessly without a window");
   args.add_flag("-i,--ignore_existing", ignore_existing, "Ignore existing renders and forcefully rewrite them.");
@@ -737,43 +787,50 @@ main(int argc, char* argv[])
       display = init_egl();
       glewInit();
 
-      load_ply_to_surfels(pcd_path, max_radius);
-      std::cout << "g_surfels size: " << g_surfels.size() << std::endl;
-      auto output = std::filesystem::path(output_path);
+      load_ply_to_surfels(pcd_path, max_radius, mp);
+      cout << "g_surfels size: " << g_surfels.size() << endl;
+      auto output = filesystem::path(output_path);
 
       if (!matrix_path.empty()) {
         std::ifstream matrices{matrix_path};
         if (matrices.good()) {
-          std::cout << "Matrices loaded." << std::endl;
+          cout << "Matrices loaded." << endl;
           json j;
           matrices >> j;
           auto process = [&](
-                  const std::string &target_render_path,
+                  const string &target_render_path,
                   const json &params,
                   bool ignore_existing) {
-            auto path = std::filesystem::path(target_render_path);
+            auto path = filesystem::path(target_render_path);
             auto last_but_one_segment = *(--(--path.end()));
             auto last_segment = *(--path.end());
             auto output_file_path = output / last_but_one_segment / last_segment;
             auto output_depth_path = output / last_but_one_segment / std::regex_replace(last_segment.string(), std::regex("_color"), "_depth");
             auto lock_file_path = output / last_but_one_segment / ("." + last_segment.string() + ".lock");
-            if (!exists(output)) std::filesystem::create_directory(output);
-            if (!exists(output / last_but_one_segment)) std::filesystem::create_directory(output / last_but_one_segment);
+            if (!exists(output)) filesystem::create_directory(output);
+            if (!exists(output / last_but_one_segment)) filesystem::create_directory(output / last_but_one_segment);
             if (!ignore_existing) {
-              if (std::filesystem::exists(output_file_path)) {
-                std::cout << canonical(absolute(output_file_path)) << ": " << "ALREADY EXISTS" << std::endl;
+              if (filesystem::exists(output_file_path)) {
+                cout << canonical(absolute(output_file_path)) << ": " << "ALREADY EXISTS" << endl;
                 return;
               }
             }
-            { std::ofstream{lock_file_path}; }
+            { ofstream{lock_file_path}; }
             boost::interprocess::file_lock lock(lock_file_path.c_str());
             if (!lock.try_lock()) {
-              std::cout << absolute(output_file_path) << ": " << "ALREADY LOCKED" << std::endl;
+              cout << absolute(output_file_path) << ": " << "ALREADY LOCKED" << endl;
               return;
             }
-            std::cout << absolute(output_file_path) << ": " << "LOCKING" << std::endl;
-            auto camera_pose = params.at("extrinsic_matrix").get<glm::mat4>();
-            auto camera_matrix = params.at("intrinsic_matrix").get<glm::mat4>();
+            cout << absolute(output_file_path) << ": " << "LOCKING" << endl;
+            auto camera_pose = params.at("camera_pose").get<glm::mat4>();
+            auto camera_matrix = params.at("calibration_mat").get<glm::mat4>();
+            auto ply_path_for_view = params.value("source_scan_ply_path", pcd_path);
+            ply_path_for_view = canonical(absolute(filesystem::path(ply_path_for_view)));
+            auto loaded_ply_path = canonical(absolute(filesystem::path(pcd_path)));
+            if (ply_path_for_view != loaded_ply_path) {
+              cout << "Skipping " << loaded_ply_path << ", rerun with proper ply." << endl;
+              return;
+            }
             auto image_width = 2.0f * camera_matrix[2][0];
             auto image_height = 2.0f * camera_matrix[2][1];
             auto focal_length_pixels = camera_matrix[0][0];
@@ -808,7 +865,7 @@ main(int argc, char* argv[])
             auto proj = g_camera.get_projection_matrix();
             save_depth(renderer.framebuffer().depth_texture(), output_depth_path.c_str(), proj(2, 2), proj(2, 3));
 
-            std::cout << canonical(absolute(output_file_path)) << ": " << (float)duration_cast<milliseconds>(end - start).count() / 1000.0f << " s" << std::endl;
+            cout << canonical(absolute(output_file_path)) << ": " << (float)duration_cast<milliseconds>(end - start).count() / 1000.0f << " s" << endl;
 
             lock.unlock();
             remove(lock_file_path);
@@ -821,15 +878,15 @@ main(int argc, char* argv[])
           }
         }
         else {
-          std::cout << "Error opening matrix file" << std::endl;
+          cout << "Error opening matrix file" << endl;
         }
       }
       else {
-        std::cout << "The matrix file '" << matrix_path << "' was not found." << std::endl;
+        cout << "The matrix file '" << matrix_path << "' was not found." << endl;
       }
     }
     catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
+      cerr << e.what() << endl;
       successful_run = false;
     }
     eglTerminate(display);

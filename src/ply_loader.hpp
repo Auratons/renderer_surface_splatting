@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/range/combine.hpp>
 #include <happly.h>
 
 
@@ -64,10 +63,8 @@ void load_ply(
           [] (const std::array<unsigned char, 3> &pt){ return std::array<unsigned int, 3>{(unsigned int)pt[0], (unsigned int)pt[1], (unsigned int)pt[2]}; }
   );
 
-  for (auto tup : boost::combine(input_normals_x, input_normals_y, input_normals_z)) {    // <---
-    float x, y, z;
-    boost::tie(x, y, z) = tup;
-    normals.emplace_back(x, y, z);
+  for (auto i = 0; i < input_normals_x.size(); ++i) {
+    normals.emplace_back(input_normals_x[i], input_normals_y[i], input_normals_z[i]);
   }
 
   std::cout << "  #vertices " << vertices.size() << std::endl;
