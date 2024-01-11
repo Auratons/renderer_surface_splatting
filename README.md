@@ -1,4 +1,98 @@
 # Surface Splatting
+
+This is a fork of https://github.com/sebastianlipponer/surface_splatting,
+enhanced with headless rendering mode, option to load a general point cloud,
+render specific views stored in a file. It renders splats as circular discs,
+it expects radii stored in a `<PLY_PATH>.radii` file in the C++ serialization
+format as a list of floats per points in the PLY file. These can be generated
+with https://github.com/Auratons/renderer_ray_marching.git.
+
+The repository contains git submodules, so either clone the repository
+with `--recurse-submodules` option or inside of the folder run
+`git submodule init && git subbmodule update --recursive`.
+
+Surface Splatting Renderer
+Usage: splatter.bin [OPTIONS]
+
+Options:
+  -h,--help                   Print this help message and exit
+  -f,--file TEXT              Path to PLY pointcloud to render
+  -m,--matrices TEXT          Path to view matrices json for which to render pointcloud in case of headless rendering
+  -o,--output_path TEXT       Path where to store renders in case of headless rendering
+  -s,--max_points INT         Take exact number of points from the PLY file
+  -r,--max_radius FLOAT       Filter possible outliers in radii file by settings max radius
+  -d,--headless               Run headlessly without a window
+  -i,--ignore_existing        Ignore existing renders and forcefully rewrite them
+
+The PLY file used needs to have normals assigned, [Meshlab](https://www.meshlab.net)
+can be used for the estimation of the vectors. For headless rendering on
+a multi-gpu machine, NVIDIA drivers may prevent running the application on other
+than GPU0 with a cryptic EGL error. It is a bug of the driver, not this application.
+
+The format of camera paramater matrices json file:
+
+    {
+      "train": {
+        "<relative path against --output_path or an absolute path to the output png>": {
+          "calibration_mat": [
+            [
+              803.802316909057,
+              0.0,
+              533.5,
+              0.0
+            ],
+            [
+              0.0,
+              803.802316909057,
+              345.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "camera_pose": [
+            [
+              0.999810651632215,
+              0.005047574637627222,
+              0.01879316027290225,
+              0.16393394238855838
+            ],
+            [
+              0.006089153405678126,
+              -0.9984242270151509,
+              -0.05578516935530967,
+              0.25632920943896725
+            ],
+            [
+              0.018481966712650667,
+              0.055889040960424845,
+              -0.9982659124737038,
+              1.0211781008610987
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ]
+        }
+      },
+      "val": {}
+    }
+
+## Upstream README
+
 [![Build badge](https://github.com/sebastianlipponer/surface_splatting/actions/workflows/build.yml/badge.svg)](https://github.com/sebastianlipponer/surface_splatting/actions?workflow=build)
 
 This demo implements a point rendering and texture filtering technique called *Surface Splatting*<sup>1</sup>. More specifically, it implements the GPU accelerated surface splatting approach by Botsch et al.<sup>2</sup> using OpenGL 3.3 (core profile). This basically comprises a raycasting based rasterization of elliptical splats, a deferred shading pipeline and an approximation to the original EWA filter<sup>1</sup>. The demo has been tested on a NVIDIA GTX 1080 Ti GPU using driver version 436.02 on Windows 10 (compiled with MSVC 2019) and 418.74 on Linux (compiled with GCC 8.3). It is built on top of [GLviz](https://github.com/sebastianlipponer/glviz) and is therefore rather simple to compile.
@@ -9,13 +103,13 @@ This demo implements a point rendering and texture filtering technique called *S
 
 _**Left**: Surface splatting of the Stanford Dragon model. **Right**: Closeup showing artificially shrunk splats to illustrate the splat distribution._
 
-## Build
+### Build
 
 Before running CMake run either build-extern.cmd or build-extern.sh to download and build the necessary external dependencies in the .extern directory.
 
 The Dockerfile in this project is a little more general as it was copied from another project. Windows script does not contain git submodule init and update commands.
 
-## Basic Principle
+### Basic Principle
 
 Surface splatting<sup>1</sup> renders point-sampled surfaces using a combination of an object-space reconstruction filter and a screen-space pre-filter for each point sample. This effectively avoids aliasing artifacts and it guarantees a hole-free reconstruction of a point-sampled surface even for moderate sampling densities. The object-space reconstruction filter resembles an elliptical disk, also referred to as a *splat*, whose position, orientation, major axis, and semi-major axis are usually chosen to provide a good approximation to a given geometry. After a perspective projection of all splats to screen-space, rendering proceeds by applying a bandlimiting prefilter to avoid frequencies higher than the Nyquist frequency of the pixel sampling grid and summing up all contributions from the overlapping splats for each individual pixel with a subsequent normalization.
 
@@ -23,7 +117,7 @@ Surface splatting<sup>1</sup> renders point-sampled surfaces using a combination
 
 _Surface splatting of a checkerboard. **Left**: EWA filter approximation enabled. **Right**: EWA filter approximation disabled._
 
-## Splat Rasterization
+### Splat Rasterization
 
 Since today's GPUs are mostly optimized for triangle based rendering and do not provide any specialized fixed-function hardware for splat rasterization, it is required to use the programmable vertex and fragment shader units for this task. The most performant way to do so, at least on NVIDIA hardware, seems still to be to draw point primitives as screen-space squares of a certain size, and to cast a ray for each fragment to test whether it is part of the splat. While the corresponding formulas proposed by Botsch et al.<sup>3,2</sup> are efficient to compute, they constitute only an approximation to the exact screen-space position and extents of a splat. Moreover, under certain conditions, the screen-space extents of a splat are underestimated by this approximation, which then causes rendering artifacts.
 
@@ -43,7 +137,7 @@ _Closeup of a cube consisting of 24 clipped splats. **Left**: Using my method of
 
 In the course of implementing and analyzing all these methods, I also devised my own approach. The idea is to bound a splat by a polygon in its parameter space and to only employ this bounding polygon to compute the screen-space position and extents of a splat. To this end, the polygon is first transformed to clip space where it is clipped by the view-frustum using the Sutherland-Hodgman algorithm. A perspective division of each vertex then yields the clipped polygon in screen-space where the desired quantities are simple to compute. This method is not exact, but it produces a correct upper bound to the extents of a splat and unlike previous methods also works for large splats being close to the near plane.
 
-## Sharp Features
+### Sharp Features
 
 The demo also implements clipped splats<sup>4</sup> to facilitate the rendering of sharp features like edges and corners of a cube.
 
@@ -52,7 +146,7 @@ The demo also implements clipped splats<sup>4</sup> to facilitate the rendering 
 _**Left**: Surface splatting of a cube consisting of 24 clipped splats. **Right**: Cube with artificially shrunk splats to illustrate the splat distribution._
 
 
-## References
+### References
 
 [1] Zwicker M., Pfister H., van Baar J., Gross M.: **Surface Splatting**. In Proceedings of the 28th Annual Conference on Computer Graphics and Interactive Techniques, SIGGRAPH '01, pp. 371-378.
 
